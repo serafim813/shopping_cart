@@ -83,104 +83,112 @@ class CartHelper:
 
 
 class ReportHelper:
-
     def get_daily_orders(self):
-        self.cart_items = Cart.objects.extra({'created_at':"date(created_at)"}).values('created_at').annotate(day_total=Count('id'))
-        days = []
-        checkout_details = []
-        for cart_item in self.cart_items:
-            days.append(cart_item['created_at'])
-            len_days = len(days) - 1
-            self.daily_orders = Cart.objects.filter(created_at=days[len_days])
-            checkout_details.append([])
-            for daily_order in self.daily_orders:
+        cart_items = Cart.objects.extra({'created_at':"date(created_at)"}).values('created_at').annotate(day_total=Count('id'))
+        self.days = []
+        self.checkout_details = []
+        for cart_item in cart_items:
+            self.days.append(cart_item['created_at'])
+            len_days = len(self.days) - 1
+            daily_orders = Cart.objects.filter(created_at=self.days[len_days])
+            self.checkout_details.append([])
+            for daily_order in daily_orders:
                 cart_helper = CartHelper(daily_order)
                 checkout_detail = cart_helper.prepare_cart_for_checkout()
-                if type(checkout_details) != bool:
-                    checkout_details[len(checkout_details)-1].append(checkout_detail['products'][0])
+                if type(self.checkout_details) != bool:
+                    self.checkout_details[len(self.checkout_details)-1].append(checkout_detail['products'][0])
 
         with open("first_report.csv", mode="w", encoding='utf-8') as w_file:
-            file_writer = csv.writer(w_file, delimiter=",", lineterminator="\r")
-            for checkout_detail_day in checkout_details:
+            fw = csv.writer(w_file, delimiter=",", lineterminator="\r")
+            for checkout_detail_day in self.checkout_details:
                 discount = 0
-                number = checkout_details.index(checkout_detail_day)
-                day = days[number]
-                file_writer.writerow([day])
+                number = self.checkout_details.index(checkout_detail_day)
+                day = self.days[number]
+                fw.writerow([day])
                 for checkout_detail in checkout_detail_day:
                     if checkout_detail['total_discount'] != 0:
                         discount = checkout_detail['total_price'] / checkout_detail['total_discount']
-                    file_writer.writerow(
+                    fw.writerow(
                         [checkout_detail['updated_at'].strftime("%m.%d.%Y %H:%M"), checkout_detail['product_name'], checkout_detail['total_price'], checkout_detail['total_discount'], discount])
 
         with open("second_report.csv", mode="w", encoding='utf-8') as w_file:
-            file_writer = csv.writer(w_file, delimiter=",", lineterminator="\r")
-            data_for_report = ReportHelper.get_data_report(self, checkout_details, days, 0)
-            for data in data_for_report:
-                file_writer.writerow(data)
+            fw = csv.writer(w_file, delimiter=",", lineterminator="\r")
+            ReportHelper.get_data_report(self)
+            for day in self.day_dict:
+                fw.writerow([day])
+                for stock in self.day_dict[day]:
+                    for category in self.day_dict[day][stock]:
+                        for count in self.day_dict[day][stock][category]:
+                            count_one = self.day_dict[day][stock][category][count]
+                            count_two = count_one[0]
+                            count_three = count_one[1]
+                            fw.writerow([stock, count, count_two, count_three])
 
         with open("third_report.csv", mode="w", encoding='utf-8') as w_file:
-            file_writer = csv.writer(w_file, delimiter=",", lineterminator="\r")
-            data_for_report = ReportHelper.get_data_report(self, checkout_details, days, 1)
-            for data in data_for_report:
-                file_writer.writerow(data)
+            fw = csv.writer(w_file, delimiter=",", lineterminator="\r")
+            ReportHelper.get_data_report(self)
+            for day in self.day_dict:
+                fw.writerow([day])
+                for stock in self.day_dict[day]:
+                    for category in self.day_dict[day][stock]:
+                        count_two = 0
+                        count_three = 0
+                        for count in self.day_dict[day][stock][category]:
+                            count_one = self.day_dict[day][stock][category][count]
+                            count_two += count_one[0]
+                            count_three += count_one[1]
+                        fw.writerow([stock, category, count_two, count_three])
 
     def update_results(self):
-        update_results = []
-        for i in range(len(self.results)):
-            update_results.append({})
-            update_results[i] = copy.deepcopy(self.results[i])
-        return(update_results)
+        update_results = {}
+        for day in self.day_dict:
+            update_results[day] = copy.deepcopy(self.day_dict[day])
+        return update_results
 
     def get_data_stock(self):
         self.results = []
-        self.campaigns = Campaign.objects.all()
-        for campaign in self.campaigns:
-            self.results.append({})
-            result = self.results[len(self.results)-1]
-            name = campaign.name
-            title = campaign.target_category.title
-            id = campaign.target_category_id
-            result[name] = 0
-            result[title] = 0
-            self.products = Product.objects.filter(category_id=id)
-            for product in self.products:
-                title = product.title
-                result[title] = [0, 0]
-        return self.results
+        self.name_dict = {}
+        self.day_dict = {}
+        for day in self.days:
+            for campaign in Campaign.objects.all():
+                products_dict = {}
+                self.results.append({})
+                self.result = self.results[len(self.results) - 1]
+                name = campaign.name
+                category_title = campaign.target_category.title
+                id = campaign.target_category_id
+                self.result[category_title] = products_dict
+                self.name_dict[name] = self.result
+                self.day_dict[day] = self.name_dict
+                for product in Product.objects.filter(category_id=id):
+                    product_title = product.title
+                    products_dict[product_title] = [0, 0]
 
-    def get_data_report(self, checkout_details, days, count):
-        data_for_report = []
-        results = ReportHelper.get_data_stock(self)
-        results = ReportHelper.update_results(self)
-        for checkout_detail in checkout_details:
-            number = checkout_details.index(checkout_detail)
-            day = days[number]
-            data_for_report.append([day])
-            for result in results:
-                results = ReportHelper.update_results(self)
-                data_for_the_report = ReportHelper.creating_data_for_the_report(self, checkout_detail, result)
-                data_keys = list(data_for_the_report.keys())
-                if count == 0:
-                    data_for_report.append([data_keys[0], data_keys[1], data_for_the_report[data_keys[0]],
-                                          data_for_the_report[data_keys[1]]])
-                if count == 1:
-                    for i in range(len(data_for_the_report) - 2):
-                        data_for_report.append([data_keys[0], data_keys[2 + i], data_for_the_report[data_keys[2 + i]][0],
-                                              data_for_the_report[data_keys[2 + i]][1]])
-        return data_for_report
+        return self.day_dict
 
-    def creating_data_for_the_report(self, daily_orders, results):
-        for daily_order in daily_orders:
-            result = results
-            stock_name = daily_order['stock_name']
-            result_keys = list(result.keys())
-            if stock_name == result_keys[0]:
-                result[stock_name] = result[stock_name] + 1
-                result[result_keys[2]][0] = result[result_keys[2]][0] + 1
-            if daily_order['category_name'] == result_keys[1] and daily_order['total_discount'] == 0:
-                result[result_keys[1]] = result[result_keys[1]] + 1
-                for i in range(len(result) - 2):
-                    if daily_order['product_name'] == result_keys[2+i]:
-                        result[result_keys[2 + i]][1] = result[result_keys[2 + i]][1] + 1
+    def get_data_report(self):
+        ReportHelper.get_data_stock(self)
+        for checkout_detail_day in self.checkout_details:
+            number = self.checkout_details.index(checkout_detail_day)
+            day = self.days[number]
+            data_for_the_report = ReportHelper.creating_data_for_the_report(self, checkout_detail_day, day)
 
-        return results
+        return data_for_the_report
+
+    def creating_data_for_the_report(self, checkout_detail_day, day):
+        for checkout_detail in checkout_detail_day:
+            stock_name = checkout_detail['stock_name']
+            category_name = checkout_detail['category_name']
+            product_name = checkout_detail['product_name']
+            quantity = checkout_detail['quantity']
+            self.day_dict = ReportHelper.update_results(self)
+            if stock_name != 'Undiscounted':
+                self.day_dict[day][stock_name][category_name][product_name][0] += quantity
+            else:
+                for category in Category.objects.filter(title=category_name):
+                    category_id = category.id
+                for campaign in Campaign.objects.filter(target_category=category_id):
+                    campaign_name = campaign.name
+                self.day_dict[day][campaign_name][category_name][product_name][1] += quantity
+
+        return self.day_dict
