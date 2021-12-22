@@ -95,8 +95,9 @@ class ReportHelper:
             for daily_order in daily_orders:
                 cart_helper = CartHelper(daily_order)
                 checkout_detail = cart_helper.prepare_cart_for_checkout()
+                len_checkout_details = len(self.checkout_details) - 1
                 if type(self.checkout_details) != bool:
-                    self.checkout_details[len(self.checkout_details)-1].append(checkout_detail['products'][0])
+                    self.checkout_details[len_checkout_details].append(checkout_detail['products'][0])
 
         with open("first_report.csv", mode="w", encoding='utf-8') as w_file:
             fw = csv.writer(w_file, delimiter=",", lineterminator="\r")
@@ -146,24 +147,21 @@ class ReportHelper:
         return update_results
 
     def get_data_stock(self):
-        self.results = []
-        self.name_dict = {}
+        stock = {}
         self.day_dict = {}
         for day in self.days:
             for campaign in Campaign.objects.all():
                 products_dict = {}
-                self.results.append({})
-                self.result = self.results[len(self.results) - 1]
+                category = {}
                 name = campaign.name
                 category_title = campaign.target_category.title
                 id = campaign.target_category_id
-                self.result[category_title] = products_dict
-                self.name_dict[name] = self.result
-                self.day_dict[day] = self.name_dict
+                category[category_title] = products_dict
+                stock[name] = category
+                self.day_dict[day] = stock
                 for product in Product.objects.filter(category_id=id):
                     product_title = product.title
                     products_dict[product_title] = [0, 0]
-
         return self.day_dict
 
     def get_data_report(self):
